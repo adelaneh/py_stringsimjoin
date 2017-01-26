@@ -11,7 +11,8 @@ def get_pairs_with_missing_value(ltable, rtable,
                                  l_join_attr, r_join_attr,
                                  l_out_attrs=None, r_out_attrs=None,
                                  l_out_prefix='l_', r_out_prefix='r_',
-                                 out_sim_score=False, show_progress=True):
+                                 out_sim_score=False, show_progress=True,
+                                 output_file=None, flush_after=None):
     # find column indices of key attr, join attr and output attrs in ltable
     l_columns = list(ltable.columns.values)
     l_key_attr_index = l_columns.index(l_key_attr)
@@ -53,6 +54,8 @@ def get_pairs_with_missing_value(ltable, rtable,
             else:
                 output_row = [l_row[l_key_attr_index], r_row[r_key_attr_index]]
             output_rows.append(output_row)
+            if output_file != None and len(output_rows) > flush_after:
+                pd.DataFrame(output_rows).to_csv(output_file, header=False, mode='a', index=False)
 
         if show_progress:
             prog_bar.update()
@@ -75,6 +78,12 @@ def get_pairs_with_missing_value(ltable, rtable,
 
             output_rows.append(output_row)
 
+            if output_file != None and len(output_rows) > flush_after:
+                print('... WRITING MISSING VALUES')
+                pd.DataFrame(output_rows).to_csv(output_file, index=False, header=False, mode='a')
+                output_rows = []
+
+
         if show_progress:
             prog_bar.update()
 
@@ -88,4 +97,5 @@ def get_pairs_with_missing_value(ltable, rtable,
 
     # generate a dataframe from the list of output rows
     output_table = pd.DataFrame(output_rows, columns=output_header)
+    print('Returning output table of size: ' + str(len(output_table)))
     return output_table    

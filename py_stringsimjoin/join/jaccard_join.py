@@ -1,11 +1,16 @@
 # jaccard join
+
 from joblib import delayed, Parallel
 import pandas as pd
+import math
+import os
+import tempfile
 
 from py_stringsimjoin.join.set_sim_join import set_sim_join
 from py_stringsimjoin.utils.generic_helper import convert_dataframe_to_array, \
     get_attrs_to_project, get_num_processes_to_launch, remove_redundant_attrs, \
-    split_table
+    split_table, get_output_header_from_tables, write_file_with_id, get_temp_filenames, \
+    merge_outputs
 from py_stringsimjoin.utils.missing_value_handler import \
     get_pairs_with_missing_value
 from py_stringsimjoin.utils.validation import validate_attr, \
@@ -21,7 +26,8 @@ def jaccard_join(ltable, rtable,
                  allow_empty=True, allow_missing=False,
                  l_out_attrs=None, r_out_attrs=None,
                  l_out_prefix='l_', r_out_prefix='r_',
-                 out_sim_score=True, n_jobs=1, show_progress=True):
+                 out_sim_score=True, n_jobs=1, show_progress=True,
+                 output_file=None, scratch_dir=None, flush_after=10):
     """Join two tables using Jaccard similarity measure.
 
     For two sets X and Y, the Jaccard similarity score between them is given by:                      
@@ -163,7 +169,24 @@ def jaccard_join(ltable, rtable,
 
     # computes the actual number of jobs to launch.
     n_jobs = min(get_num_processes_to_launch(n_jobs), len(rtable_array))
-    
+
+
+    # Get the output header and write it to file
+    if output_file != None:
+
+        with tempfile.NamedTemporaryFile(dir=scratch_dir, delete=False) as t:
+            _output_file =  t.name
+        output_header = get_output_header_from_tables(
+                                l_key_attr, r_key_attr,
+                                l_out_attrs, r_out_attrs,
+                                l_out_prefix, r_out_prefix)
+        if out_sim_score:
+                output_header.append("_sim_score")
+
+        # Write the output header to file
+        pd.DataFrame(columns=output_header).to_csv(_output_file, index=False, mode='w+')
+
+
     if n_jobs <= 1:
         # if n_jobs is 1, do not use any parallel code.
         output_table = set_sim_join(ltable_array, rtable_array,
@@ -174,25 +197,59 @@ def jaccard_join(ltable, rtable,
                                     threshold, comp_op, allow_empty,
                                     l_out_attrs, r_out_attrs,
                                     l_out_prefix, r_out_prefix,
-                                    out_sim_score, show_progress)
+                                    out_sim_score, show_progress,
+                                    _output_file, flush_after
+                                    )
     else:
         # if n_jobs is above 1, split the right table into n_jobs splits and
         # join each right table split with the whole of left table in a separate
         # process.
         r_splits = split_table(rtable_array, n_jobs)
-        results = Parallel(n_jobs=n_jobs)(delayed(set_sim_join)(
-                                          ltable_array, r_splits[job_index],
-                                          l_proj_attrs, r_proj_attrs,
-                                          l_key_attr, r_key_attr,
-                                          l_join_attr, r_join_attr,
-                                          tokenizer, 'JACCARD',
-                                          threshold, comp_op, allow_empty,
-                                          l_out_attrs, r_out_attrs,
-                                          l_out_prefix, r_out_prefix,
-                                          out_sim_score,
-                                      (show_progress and (job_index==n_jobs-1)))
-                                          for job_index in range(n_jobs))
-        output_table = pd.concat(results)
+        if output_file != None:
+            _intermediate_output_files = get_temp_filenames(n_jobs, scratch_dir)
+            _flush_after = math.ceil(flush_after/n_jobs)
+            results = Parallel(n_jobs=n_jobs)(delayed(set_sim_join)(
+                                              ltable_array, r_splits[job_index],
+                                              l_proj_attrs, r_proj_attrs,
+                                              l_key_attr, r_key_attr,
+                                              l_join_attr, r_join_attr,
+                                              tokenizer, 'JACCARD',
+                                              threshold, comp_op, allow_empty,
+                                              l_out_attrs, r_out_attrs,
+                                              l_out_prefix, r_out_prefix,
+                                              out_sim_score,
+                                          (show_progress and (job_index==n_jobs-1)),
+                                              _intermediate_output_files[job_index], _flush_after)
+                                              for job_index in range(n_jobs))
+            merge_outputs(_intermediate_output_files, _output_file)
+            for f in _intermediate_output_files:
+                if os.path.isfile(f):
+                    os.remove(f)
+            output_table = pd.concat(results)
+
+            if len(output_table) > flush_after:
+                output_table.to_csv(output_file, index=False, header=False, mode='a')
+                output_table = pd.DataFrame(columns=output_header)
+
+
+
+
+
+        else:
+            results = Parallel(n_jobs=n_jobs)(delayed(set_sim_join)(
+                                              ltable_array, r_splits[job_index],
+                                              l_proj_attrs, r_proj_attrs,
+                                              l_key_attr, r_key_attr,
+                                              l_join_attr, r_join_attr,
+                                              tokenizer, 'JACCARD',
+                                              threshold, comp_op, allow_empty,
+                                              l_out_attrs, r_out_attrs,
+                                              l_out_prefix, r_out_prefix,
+                                              out_sim_score,
+                                          (show_progress and (job_index==n_jobs-1)))
+                                              for job_index in range(n_jobs))
+
+            output_table = pd.concat(results)
 
     # If allow_missing flag is set, then compute all pairs with missing value in
     # at least one of the join attributes and then add it to the output 
@@ -204,14 +261,25 @@ def jaccard_join(ltable, rtable,
                                         l_join_attr, r_join_attr,
                                         l_out_attrs, r_out_attrs,
                                         l_out_prefix, r_out_prefix,
-                                        out_sim_score, show_progress) 
+                                        out_sim_score, show_progress, _output_file, flush_after)
         output_table = pd.concat([output_table, missing_pairs])
-
-    # add an id column named '_id' to the output table.
-    output_table.insert(0, '_id', range(0, len(output_table)))
 
     # revert the return_set flag of tokenizer, in case it was modified.
     if revert_tokenizer_return_set_flag:
         tokenizer.set_return_set(False)
 
-    return output_table
+
+    # add an id column named '_id' to the output table.
+    if output_file == None:
+        output_table.insert(0, '_id', range(0, len(output_table)))
+        return output_table
+
+    else:
+        pd.DataFrame(output_table).to_csv(_output_file, index=False, header=False, mode='a')
+        write_file_with_id(_output_file, output_file, chunk_size=flush_after)
+        os.remove(_output_file)
+        print('The output is in file ' + output_file)
+
+
+
+

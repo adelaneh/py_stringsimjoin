@@ -69,3 +69,6 @@ target/
 
 # idea files
 .idea/
+
+# Scrap files
+py_stringsimjoin/garage/
