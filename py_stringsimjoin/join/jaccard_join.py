@@ -5,6 +5,8 @@ import pandas as pd
 import math
 import os
 import tempfile
+from profilehooks import profile
+from time import gmtime, strftime
 
 from py_stringsimjoin.join.set_sim_join import set_sim_join
 from py_stringsimjoin.utils.generic_helper import convert_dataframe_to_array, \
@@ -18,7 +20,7 @@ from py_stringsimjoin.utils.validation import validate_attr, \
     validate_input_table, validate_threshold, validate_tokenizer, \
     validate_output_attrs
 
-
+@profile
 def jaccard_join(ltable, rtable,
                  l_key_attr, r_key_attr,
                  l_join_attr, r_join_attr,
@@ -208,6 +210,7 @@ def jaccard_join(ltable, rtable,
         if output_file != None:
             _intermediate_output_files = get_temp_filenames(n_jobs, scratch_dir)
             _flush_after = math.ceil(flush_after/n_jobs)
+            print('<START> SET SIM JOIN: ' + strftime("%Y-%m-%d %H:%M:%S", gmtime()))
             results = Parallel(n_jobs=n_jobs)(delayed(set_sim_join)(
                                               ltable_array, r_splits[job_index],
                                               l_proj_attrs, r_proj_attrs,
@@ -221,7 +224,10 @@ def jaccard_join(ltable, rtable,
                                           (show_progress and (job_index==n_jobs-1)),
                                               _intermediate_output_files[job_index], _flush_after)
                                               for job_index in range(n_jobs))
+            print('<END> SET SIM JOIN: ' + strftime("%Y-%m-%d %H:%M:%S", gmtime()))
+            print('\n<START> MERGING OUTPUTS: ' + strftime("%Y-%m-%d %H:%M:%S", gmtime()))
             merge_outputs(_intermediate_output_files, _output_file)
+            print('<END> MERGING OUTPUTS: ' + strftime("%Y-%m-%d %H:%M:%S", gmtime()))
             for f in _intermediate_output_files:
                 if os.path.isfile(f):
                     os.remove(f)
@@ -276,7 +282,9 @@ def jaccard_join(ltable, rtable,
 
     else:
         pd.DataFrame(output_table).to_csv(_output_file, index=False, header=False, mode='a')
-        write_file_with_id(_output_file, output_file, chunk_size=flush_after)
+        print('\n<START> WRITING FILE WITH ID: ' + strftime("%Y-%m-%d %H:%M:%S", gmtime()))
+        write_file_with_id(_output_file, output_file)
+        print('<END> WRITING FILE WITH ID: ' + strftime("%Y-%m-%d %H:%M:%S", gmtime()))
         os.remove(_output_file)
         print('The output is in file ' + output_file)
 

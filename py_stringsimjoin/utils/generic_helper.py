@@ -6,7 +6,7 @@ import os
 from six.moves import xrange
 import pandas as pd
 import tempfile
-
+import shutil
 
 COMP_OP_MAP = {'>=': operator.ge,
                '>': operator.gt,
@@ -157,21 +157,17 @@ def get_attrs_to_project(out_attrs, key_attr, join_attr):
 
     return proj_attrs
 
-def write_file_with_id(input_file, output_file, chunk_size, id_col_name='_id'):
-    data_frame = pd.read_csv(input_file, chunksize=chunk_size)
-
-    to_idx = 0
-    flag = True
-    for chunk in data_frame:
-        from_idx = to_idx
-        to_idx = from_idx + len(chunk)
-        if flag:
-            cols = chunk.columns
-            cols = cols.insert(0, id_col_name)
-            pd.DataFrame(columns=cols).to_csv(output_file, header=True, index=False, mode='w+')
-            flag = False
-        chunk.insert(0, id_col_name, range(from_idx, to_idx))
-        chunk.to_csv(output_file, header=False, index=False, mode='a')
+def write_file_with_id(input_file, output_file, id_col_name='_id'):
+    header = True
+    cnt = 0
+    with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
+        for line in infile:
+            if header:
+                outfile.write(id_col_name+','+line)
+                header=False
+            else:
+                outfile.write(str(cnt)+','+line)
+                cnt += 1
 
 
 def get_temp_filenames(n, dir):
@@ -183,8 +179,14 @@ def get_temp_filenames(n, dir):
 
 
 def merge_outputs(input_filenames, output_file):
-    for file in input_filenames:
-        if os.path.isfile(file):
-            pd.read_csv(file, header=None).to_csv(output_file, index=False, mode='a', header=False)
-    return True
+    with open(output_file, 'a') as outfile:
+        for file in input_filenames:
+
+            if os.path.isfile(file):
+                with open(file, 'r') as infile:
+                    shutil.copyfileobj(infile, outfile, 20*1024*1024)
+    # for file in input_filenames:
+    #     if os.path.isfile(file):
+    #         pd.read_csv(file, header=None).to_csv(output_file, index=False, mode='a', header=False)
+    # return True
 

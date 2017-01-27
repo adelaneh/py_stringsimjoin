@@ -12,7 +12,9 @@ from py_stringsimjoin.utils.simfunctions import get_sim_function
 from py_stringsimjoin.utils.token_ordering import \
     gen_token_ordering_for_tables, order_using_token_ordering
 
+from profilehooks import profile
 
+# @profile
 def set_sim_join(ltable, rtable,
                  l_columns, r_columns,
                  l_key_attr, r_key_attr,

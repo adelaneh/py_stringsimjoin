@@ -39,7 +39,7 @@ def get_pairs_with_missing_value(ltable, rtable,
                              r_out_attrs is not None)
 
     if show_progress:
-        print('Finding pairs with missing value...')
+        # print('Finding pairs with missing value...')
         prog_bar = pyprind.ProgBar(len(ltable_missing) + len(rtable_missing))
 
     # For each ltable record with missing value in l_join_attr,
@@ -79,7 +79,7 @@ def get_pairs_with_missing_value(ltable, rtable,
             output_rows.append(output_row)
 
             if output_file != None and len(output_rows) > flush_after:
-                print('... WRITING MISSING VALUES')
+                # print('... WRITING MISSING VALUES')
                 pd.DataFrame(output_rows).to_csv(output_file, index=False, header=False, mode='a')
                 output_rows = []
 
@@ -97,5 +97,5 @@ def get_pairs_with_missing_value(ltable, rtable,
 
     # generate a dataframe from the list of output rows
     output_table = pd.DataFrame(output_rows, columns=output_header)
-    print('Returning output table of size: ' + str(len(output_table)))
+    # print('Returning output table of size: ' + str(len(output_table)))
     return output_table    
