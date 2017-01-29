@@ -190,3 +190,20 @@ def merge_outputs(input_filenames, output_file):
     #         pd.read_csv(file, header=None).to_csv(output_file, index=False, mode='a', header=False)
     # return True
 
+
+def remove_files(file_names):
+    for f in file_names:
+        if os.path.isfile(f):
+            os.remove(f)
+    return True
+
+def should_flush(ds, flush_after):
+    if len(ds) > flush_after:
+        return True
+
+def flush_to_file(data_frame, output_file, mode='a'):
+    return data_frame.to_csv(output_file, index=False, header=False, mode=mode)
+
+
+
+

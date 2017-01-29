@@ -7,7 +7,7 @@ from py_stringsimjoin.filter.position_filter import PositionFilter
 from py_stringsimjoin.index.position_index import PositionIndex
 from py_stringsimjoin.utils.generic_helper import convert_dataframe_to_array, \
     find_output_attribute_indices, get_output_header_from_tables, \
-    get_output_row_from_tables, COMP_OP_MAP
+    get_output_row_from_tables, COMP_OP_MAP, flush_to_file, should_flush
 from py_stringsimjoin.utils.simfunctions import get_sim_function
 from py_stringsimjoin.utils.token_ordering import \
     gen_token_ordering_for_tables, order_using_token_ordering
@@ -97,8 +97,10 @@ def set_sim_join(ltable, rtable,
                 if out_sim_score:
                     output_row.append(1.0)
                 output_rows.append(output_row)
-                if output_file != None and len(output_rows) > flush_after:
-                    pd.DataFrame(output_rows).to_csv(output_file, index=False, header=False, mode='a')
+
+
+                if output_file != None and should_flush(output_rows, flush_after):
+                    flush_to_file(pd.DataFrame(output_rows), output_file)
                     output_rows = []
             continue
 
@@ -130,8 +132,9 @@ def set_sim_join(ltable, rtable,
                         output_row.append(sim_score)
 
                     output_rows.append(output_row)
-                    if output_file != None and len(output_rows) > flush_after:
-                        pd.DataFrame(output_rows).to_csv(output_file, index=False, header=False, mode='a')
+
+                    if output_file != None and should_flush(output_rows, flush_after):
+                        flush_to_file(pd.DataFrame(output_rows), output_file)
                         output_rows = []
 
 
