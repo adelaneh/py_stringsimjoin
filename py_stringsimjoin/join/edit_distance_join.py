@@ -1,13 +1,15 @@
 # edit distance join
 from math import floor
+import sys
 
 from joblib import delayed, Parallel
 from py_stringmatching.tokenizer.qgram_tokenizer import QgramTokenizer
 import pandas as pd
 import pyprind
 
-from py_stringsimjoin.filter.prefix_filter import PrefixFilter
 from py_stringsimjoin.index.prefix_index import PrefixIndex
+from py_stringsimjoin.index.location_index import LocationIndex
+from py_stringsimjoin.filter.filter_utils import get_prefix_length
 from py_stringsimjoin.utils.generic_helper import convert_dataframe_to_array, \
     find_output_attribute_indices, get_attrs_to_project, \
     get_num_processes_to_launch, get_output_header_from_tables, \
@@ -267,13 +269,13 @@ def _edit_distance_join_split(ltable_list, rtable_list,
     for row in ltable_list:
         l_join_attr_list.append(len(row[l_join_attr_index]))
 
-    # Build prefix index on l_join_attr
-    prefix_index = PrefixIndex(ltable_list, l_join_attr_index,
+    # Build location index on l_join_attr
+    loc_index = LocationIndex(ltable_list, l_join_attr_index,
                                tokenizer, sim_measure_type, threshold,
                                token_ordering)
-    prefix_index.build(False)
+    loc_index.build(False)
 
-    prefix_filter = PrefixFilter(tokenizer, sim_measure_type, threshold)
+    sys.stdout.write('No prefix filter now.\n'); sys.stdout.flush()
 
     comp_fn = COMP_OP_MAP[comp_op]
     sim_fn = get_sim_function(sim_measure_type)
@@ -289,37 +291,70 @@ def _edit_distance_join_split(ltable_list, rtable_list,
         r_string = r_row[r_join_attr_index]
         r_len = len(r_string)
 
-        r_ordered_tokens = order_using_token_ordering(
-                tokenizer.tokenize(r_string), token_ordering)
+        r_string_tokens = tokenizer.tokenize(r_string)
+        r_ordered_tokens = order_using_token_ordering(r_string_tokens,
+            token_ordering)
 
         # obtain candidates by applying prefix filter. 
-        candidates = prefix_filter.find_candidates(r_ordered_tokens,
-                                                   prefix_index)
+        candidates = set()
+        if loc_index.index:
+            probe_num_tokens = len(r_ordered_tokens)
+            probe_prefix_length = get_prefix_length(probe_num_tokens,
+                                                    sim_measure_type,
+                                                    threshold,
+                                                    tokenizer)
+
+            # save locations
+            r_string_toks_locs = {}
+            r_tok_loc = -1
+            for tok in r_string_tokens:
+                tokid = token_ordering[tok]
+                if tokid not in r_string_toks_locs:
+                    r_string_toks_locs[tokid] = []
+                r_string_toks_locs[tokid] += [r_tok_loc]
+                r_tok_loc += 1
+
+            for token in r_ordered_tokens[0:probe_prefix_length]:
+                r_locs = r_string_toks_locs[token]
+
+                cands = loc_index.probe(token)
+                for cand in cands:
+                    l_rowid = cand[0]
+                    if l_rowid in candidates: continue
+
+                    l_locs = cand[1]
+                    if r_len - threshold <= l_join_attr_list[l_rowid] <= r_len + threshold:
+                        loc_diff = abs(r_locs[0] - l_locs[0]) \
+                            if len(r_locs) == 1 and len(l_locs) == 1 \
+                            else min([abs(r_loc - l_loc) for r_loc in r_locs for l_loc in l_locs])
+                        if loc_diff <= threshold:
+                            candidates.add(l_rowid)
+
+        #sys.stdout.write(str(len(candidates)) + '\t'); sys.stdout.flush()
 
         for cand in candidates:
-            if r_len - threshold <= l_join_attr_list[cand] <= r_len + threshold:
-                l_row = ltable_list[cand]
+            l_row = ltable_list[cand]
 
-                # compute the actual edit distance                           
-                edit_dist = sim_fn(l_row[l_join_attr_index], r_string)
+            # compute the actual edit distance                           
+            edit_dist = sim_fn(l_row[l_join_attr_index], r_string)
 
-                if comp_fn(edit_dist, threshold):
-                    if has_output_attributes:
-                        output_row = get_output_row_from_tables(
-                                         l_row, r_row,
-                                         l_key_attr_index, r_key_attr_index,
-                                         l_out_attrs_indices,
-                                         r_out_attrs_indices)
-                    else:
-                        output_row = [l_row[l_key_attr_index],
-                                      r_row[r_key_attr_index]]
+            if comp_fn(edit_dist, threshold):
+                if has_output_attributes:
+                    output_row = get_output_row_from_tables(
+                                     l_row, r_row,
+                                     l_key_attr_index, r_key_attr_index,
+                                     l_out_attrs_indices,
+                                     r_out_attrs_indices)
+                else:
+                    output_row = [l_row[l_key_attr_index],
+                                  r_row[r_key_attr_index]]
 
-                    # if out_sim_score flag is set, append the edit distance 
-                    # score to the output record.
-                    if out_sim_score:
-                        output_row.append(edit_dist)
+                # if out_sim_score flag is set, append the edit distance 
+                # score to the output record.
+                if out_sim_score:
+                    output_row.append(edit_dist)
 
-                    output_rows.append(output_row)
+                output_rows.append(output_row)
 
         if show_progress:
             prog_bar.update()
