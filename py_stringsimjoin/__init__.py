@@ -1,6 +1,9 @@
 
 __version__ = '0.1.0'
 
+# determine whether to use available cython implementations
+__use_cython__ = True
+
 # import join methods
 from py_stringsimjoin.join.cosine_join import cosine_join
 from py_stringsimjoin.join.dice_join import dice_join
@@ -30,3 +33,5 @@ from py_stringsimjoin.utils.generic_helper import get_install_path
 
 # import methods to load sample datasets
 from py_stringsimjoin.datasets.base import load_books_dataset, load_person_dataset
+
+
